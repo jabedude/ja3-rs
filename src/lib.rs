@@ -1,5 +1,5 @@
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use lazy_static::*;
 use log::info;
@@ -22,15 +22,38 @@ lazy_static! {
     ];
 }
 
+type Result<T> = std::result::Result<T, Error>;
+
 #[derive(Debug)]
 pub enum Error {
     ParseError,
 }
 
-#[derive(Debug, Eq)]
+#[derive(Debug)]
 pub struct Ja3 {
     pub ja3_str: String,
     pub hash: Digest,
+    i: Ja3Inner,
+}
+
+#[derive(Debug)]
+struct Ja3Inner {
+    path: PathBuf,
+    tls_port: u16,
+}
+
+impl Ja3 {
+    pub fn new(pcap_path: PathBuf) -> Self {
+        let i = Ja3Inner {
+            path: pcap_path,
+            tls_port: 443,
+        };
+        Ja3 {
+            ja3_str: String::new(),
+            hash: Digest([0u8; 16]),
+            i: i,
+        }
+    }
 }
 
 impl fmt::Display for Ja3 {
@@ -44,8 +67,6 @@ impl PartialEq for Ja3 {
         self.hash == other.hash
     }
 }
-
-type Result<T> = std::result::Result<T, Error>;
 
 fn process_extensions(extensions: &[u8]) -> Option<String> {
     let mut ja3_exts = String::new();
@@ -178,6 +199,10 @@ pub fn process_pcap<P: AsRef<Path>>(pcap_path: P) -> Result<Vec<Ja3>> {
         let ja3_res = Ja3 {
             ja3_str: ja3_string,
             hash: hash,
+            i: Ja3Inner {
+                path: PathBuf::new(),
+                tls_port: 443,
+            }
         };
 
         results.push(ja3_res);
