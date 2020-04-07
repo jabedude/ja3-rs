@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use lazy_static::*;
+use log::info;
 use md5::{self, Digest};
 use pcap::Capture;
 use pnet::packet::*;
@@ -33,17 +34,17 @@ fn process_extensions(extensions: &[u8]) -> Option<String> {
     for extension in exts {
         // TODO: GREASE
         let ext_val = u16::from(TlsExtensionType::from(&extension));
-        eprintln!("Ext: {:?}", ext_val);
+        info!("Ext: {:?}", ext_val);
         ja3_exts.push_str(&format!("{}-", ext_val));
         match extension {
             TlsExtension::EllipticCurves(curves) => {
                 for curve in curves {
-                    eprintln!("curve: {}", curve.0);
+                    info!("curve: {}", curve.0);
                     supported_groups.push_str(&format!("{}-", curve.0));
                 }
             },
             TlsExtension::EcPointFormats(points) => {
-                eprintln!("Points: {:x?}", points);
+                info!("Points: {:x?}", points);
                 for point in points {
                     ec_points.push_str(&format!("{}-", point));
                 }
@@ -51,35 +52,38 @@ fn process_extensions(extensions: &[u8]) -> Option<String> {
             _ => {},
         }
     }
+    ja3_exts.pop();
     supported_groups.pop();
     ec_points.pop();
-    eprintln!("{}", supported_groups);
-    eprintln!("{}", ec_points);
+    info!("{}", supported_groups);
+    info!("{}", ec_points);
     let ret = format!("{},{},{}", ja3_exts, supported_groups, ec_points);
     Some(ret)
 }
 
 pub fn ja3_string_client_hello(packet: &[u8]) -> Option<String> {
+    info!("PACKET: {:?}", packet);
     let mut ja3_string = String::new();
     let res = parse_tls_plaintext(packet);
     match res {
         Ok((rem, record)) => {
-            eprintln!("Rem: {:?}, record: {:?}", rem, record);
-            eprintln!("record type: {:?}", record.hdr.record_type);
+            info!("Rem: {:?}, record: {:?}", rem, record);
+            info!("record type: {:?}", record.hdr.record_type);
             if record.hdr.record_type != TlsRecordType::Handshake {
                 return None;
             }
             for rec in record.msg {
                 if let TlsMessage::Handshake(handshake) = rec {
                     if let TlsMessageHandshake::ClientHello(contents) = handshake {
-                        eprintln!("handshake contents: {:?}", contents);
-                        eprintln!("handshake tls version: {:?}", u16::from(contents.version));
+                        info!("handshake contents: {:?}", contents);
+                        info!("handshake tls version: {:?}", u16::from(contents.version));
                         ja3_string.push_str(&format!("{},", u16::from(contents.version)));
                         for cipher in contents.ciphers {
-                            eprintln!("handshake cipher: {}", u16::from(cipher));
+                            info!("handshake cipher: {}", u16::from(cipher));
                             ja3_string.push_str(&format!("{}-", u16::from(cipher)));
                         }
                         ja3_string.pop();
+                        ja3_string.push(',');
                         if let Some(extensions) = contents.ext {
                             let ext = process_extensions(extensions).unwrap();
                             ja3_string.push_str(&ext);
@@ -89,25 +93,31 @@ pub fn ja3_string_client_hello(packet: &[u8]) -> Option<String> {
             }
         },
         _ => {
-            eprintln!("ERROR");
+            info!("ERROR");
         },
     }
 
-    eprintln!("ja3_string: {}", ja3_string);
+    info!("ja3_string: {}", ja3_string);
     Some(ja3_string)
 }
 
-pub fn process_pcap<P: AsRef<Path>>(pcap_path: P) -> Result<()> {
+pub struct Ja3 {
+    pub ja3_str: String,
+    pub hash: Digest,
+}
+
+pub fn process_pcap<P: AsRef<Path>>(pcap_path: P) -> Result<Vec<Ja3>> {
+    let mut results: Vec<Ja3> = Vec::new();
     let mut cap = Capture::from_file(pcap_path).unwrap();
     while let Ok(packet) = cap.next() {
         let ether = ethernet::EthernetPacket::new(&packet).ok_or(Error::ParseError)?;
-        eprintln!("\nether packet: {:?} len: {}", ether, ether.packet_size());
+        info!("\nether packet: {:?} len: {}", ether, ether.packet_size());
         if ether.get_ethertype() != EtherType(0x0800) {
             continue;
         }
 
         let ip = ipv4::Ipv4Packet::new(&packet[ether.packet_size()..]).ok_or(Error::ParseError)?;
-        eprintln!("\nip packet: {:?}", ip);
+        info!("\nip packet: {:?}", ip);
         if ip.get_next_level_protocol() != *IPTYPE {
             continue;
         }
@@ -115,34 +125,55 @@ pub fn process_pcap<P: AsRef<Path>>(pcap_path: P) -> Result<()> {
         let iphl = ip.get_header_length() as usize * 4;
         let tcp_start = iphl + ether.packet_size();
         let tcp = tcp::TcpPacket::new(&packet[tcp_start..]).ok_or(Error::ParseError)?;
-        eprintln!("tcp: {:?}", tcp);
+        info!("tcp: {:?}", tcp);
         if tcp.get_destination() != 443 {
             continue;
         }
 
-        eprintln!("pack size: {}", tcp.packet_size());
+        info!("pack size: {}", tcp.packet_size());
         let handshake_start = tcp_start + tcp.packet_size();
-        eprintln!("handshake_start: {}", handshake_start);
+        info!("handshake_start: {}", handshake_start);
         let handshake = &packet[handshake_start..];
-        eprintln!("handshake: {:x?}", handshake);
+        info!("handshake: {:x?}", handshake);
         if handshake[0] != 0x16 {
             continue;
         }
 
-        eprintln!("sending handshake");
-        let digest = ja3_string_client_hello(&handshake);
+        info!("sending handshake {:?}", handshake);
+        let ja3_string = ja3_string_client_hello(&handshake).unwrap();
+        let hash = md5::compute(&ja3_string.as_bytes());
+        let ja3_res = Ja3 {
+            ja3_str: ja3_string,
+            hash: hash,
+        };
+
+        results.push(ja3_res);
     }
 
-    Ok(())
+    Ok(results)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
+    use env_logger;
 
     #[test]
     fn it_works() {
-        process_pcap("test.pcap").unwrap();
+        let ja3s = process_pcap("test.pcap").unwrap();
+    }
+
+    #[test]
+    fn test_ja3_client_hello_firefox_single_packet() {
+        env_logger::init();
+        let expected_str = "771,49195-49199-52393-52392-49196-49200-49162-49161-49171-49172-51-57-47-53-10,0-23-65281-10-11-35-16-5-13-28,29-23-24-25,0";
+        let expected_hash = "839bbe3ed07fed922ded5aaf714d6842";
+
+        let mut ja3s = process_pcap("test.pcap").unwrap();
+        let ja3 = ja3s.pop().unwrap();
+        assert_eq!(ja3.ja3_str, expected_str);
+        assert_eq!(format!("{:x}", ja3.hash), expected_hash);
     }
 
     #[test]
