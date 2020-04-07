@@ -4,13 +4,13 @@ use lazy_static::*;
 use log::info;
 use md5::{self, Digest};
 use pcap::Capture;
-use pnet::packet::*;
 use pnet::packet::ethernet::EtherType;
 use pnet::packet::ip::IpNextHeaderProtocol;
 use pnet::packet::ip::IpNextHeaderProtocols;
+use pnet::packet::*;
 use tls_parser::parse_tls_plaintext;
+use tls_parser::tls::{TlsMessage, TlsMessageHandshake, TlsRecordType};
 use tls_parser::tls_extensions::{parse_tls_extensions, TlsExtension, TlsExtensionType};
-use tls_parser::tls::{TlsRecordType, TlsMessage, TlsMessageHandshake};
 
 // curl ja3 hash: 456523fc94726331a4d5a2e1d40b2cd7
 // "771,4866-4867-4865-49196-49200-159-52393-52392-52394-49195-49199-158-49188-49192-107-49187-49191-103-49162-49172-57-49161-49171-51-157-156-61-60-53-47-255,0-11-10-13172-16-22-23-13-43-45-51-21,29-23-30-25-24,0-1-2"
@@ -20,7 +20,10 @@ use tls_parser::tls::{TlsRecordType, TlsMessage, TlsMessageHandshake};
 
 lazy_static! {
     static ref IPTYPE: IpNextHeaderProtocol = IpNextHeaderProtocol::new(6);
-    static ref GREASE: Vec<u16> = vec![0x0a0a, 0x1a1a, 0x2a2a, 0x3a3a, 0x4a4a, 0x5a5a, 0x6a6a, 0x7a7a, 0x8a8a, 0x9a9a, 0xaaaa, 0xbaba, 0xcaca, 0xdada, 0xeaea, 0xfafa];
+    static ref GREASE: Vec<u16> = vec![
+        0x0a0a, 0x1a1a, 0x2a2a, 0x3a3a, 0x4a4a, 0x5a5a, 0x6a6a, 0x7a7a, 0x8a8a, 0x9a9a, 0xaaaa,
+        0xbaba, 0xcaca, 0xdada, 0xeaea, 0xfafa
+    ];
 }
 
 #[derive(Debug)]
@@ -54,14 +57,14 @@ fn process_extensions(extensions: &[u8]) -> Option<String> {
                     info!("curve: {}", curve.0);
                     supported_groups.push_str(&format!("{}-", curve.0));
                 }
-            },
+            }
             TlsExtension::EcPointFormats(points) => {
                 info!("Points: {:x?}", points);
                 for point in points {
                     ec_points.push_str(&format!("{}-", point));
                 }
-            },
-            _ => {},
+            }
+            _ => {}
         }
     }
     ja3_exts.pop();
@@ -103,10 +106,10 @@ pub fn ja3_string_client_hello(packet: &[u8]) -> Option<String> {
                     }
                 }
             }
-        },
+        }
         _ => {
             info!("ERROR");
-        },
+        }
     }
 
     info!("ja3_string: {}", ja3_string);
@@ -121,23 +124,25 @@ pub fn process_pcap<P: AsRef<Path>>(pcap_path: P) -> Result<Vec<Ja3>> {
         info!("\nether packet: {:?} len: {}", ether, ether.packet_size());
         let tcp_start = match ether.get_ethertype() {
             EtherType(0x0800) => {
-                let ip = ipv4::Ipv4Packet::new(&packet[ether.packet_size()..]).ok_or(Error::ParseError)?;
+                let ip = ipv4::Ipv4Packet::new(&packet[ether.packet_size()..])
+                    .ok_or(Error::ParseError)?;
                 info!("\nipv4 packet: {:?}", ip);
                 if ip.get_next_level_protocol() != *IPTYPE {
                     continue;
                 }
                 let iphl = ip.get_header_length() as usize * 4;
                 iphl + ether.packet_size()
-            },
+            }
             EtherType(0x86dd) => {
-                let ip = ipv6::Ipv6Packet::new(&packet[ether.packet_size()..]).ok_or(Error::ParseError)?;
+                let ip = ipv6::Ipv6Packet::new(&packet[ether.packet_size()..])
+                    .ok_or(Error::ParseError)?;
                 info!("\nipv6 packet: {:?}", ip);
                 if ip.get_next_header() != IpNextHeaderProtocols::Tcp {
                     continue;
                 }
                 let iphl = 40;
                 iphl + ether.packet_size()
-            },
+            }
             _ => return Err(Error::ParseError),
         };
 
@@ -176,8 +181,8 @@ pub fn process_pcap<P: AsRef<Path>>(pcap_path: P) -> Result<Vec<Ja3>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pretty_assertions::assert_eq;
     use env_logger;
+    use pretty_assertions::assert_eq;
 
     // TODO: Add GREASE test case
 
