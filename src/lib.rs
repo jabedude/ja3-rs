@@ -13,11 +13,6 @@ use tls_parser::parse_tls_plaintext;
 use tls_parser::tls::{TlsMessage, TlsMessageHandshake, TlsRecordType};
 use tls_parser::tls_extensions::{parse_tls_extensions, TlsExtension, TlsExtensionType};
 
-// curl ja3 hash: 456523fc94726331a4d5a2e1d40b2cd7
-// "771,4866-4867-4865-49196-49200-159-52393-52392-52394-49195-49199-158-49188-49192-107-49187-49191-103-49162-49172-57-49161-49171-51-157-156-61-60-53-47-255,0-11-10-13172-16-22-23-13-43-45-51-21,29-23-30-25-24,0-1-2"
-//
-// firefox ja3 hash: 839bbe3ed07fed922ded5aaf714d6842
-// "771,49195-49199-52393-52392-49196-49200-49162-49161-49171-49172-51-57-47-53-10,0-23-65281-10-11-35-16-5-13-28,29-23-24-25,0"
 
 lazy_static! {
     static ref IPTYPE: IpNextHeaderProtocol = IpNextHeaderProtocol::new(6);
@@ -32,7 +27,7 @@ pub enum Error {
     ParseError,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq)]
 pub struct Ja3 {
     pub ja3_str: String,
     pub hash: Digest,
@@ -41,6 +36,12 @@ pub struct Ja3 {
 impl fmt::Display for Ja3 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} --> {:x}", self.ja3_str, self.hash)
+    }
+}
+
+impl PartialEq for Ja3 {
+    fn eq(&self, other: &Self) -> bool {
+        self.hash == other.hash
     }
 }
 
