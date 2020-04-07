@@ -134,6 +134,9 @@ pub fn process_pcap<P: AsRef<Path>>(pcap_path: P) -> Result<Vec<Ja3>> {
         let handshake_start = tcp_start + tcp.packet_size();
         info!("handshake_start: {}", handshake_start);
         let handshake = &packet[handshake_start..];
+        if handshake.len() <= 0 {
+            continue;
+        }
         info!("handshake: {:x?}", handshake);
         if handshake[0] != 0x16 {
             continue;
