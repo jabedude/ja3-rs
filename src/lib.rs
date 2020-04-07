@@ -12,6 +12,8 @@ use tls_parser::tls_extensions::{parse_tls_extensions, TlsExtension, TlsExtensio
 use tls_parser::tls::{TlsRecordType, TlsMessage, TlsMessageHandshake};
 
 // curl ja3 hash: 456523fc94726331a4d5a2e1d40b2cd7
+// "771,4866-4867-4865-49196-49200-159-52393-52392-52394-49195-49199-158-49188-49192-107-49187-49191-103-49162-49172-57-49161-49171-51-157-156-61-60-53-47-255,0-11-10-13172-16-22-23-13-43-45-51-21,29-23-30-25-24,0-1-2"
+//
 // firefox ja3 hash: 839bbe3ed07fed922ded5aaf714d6842
 // "771,49195-49199-52393-52392-49196-49200-49162-49161-49171-49172-51-57-47-53-10,0-23-65281-10-11-35-16-5-13-28,29-23-24-25,0"
 
@@ -101,6 +103,7 @@ pub fn ja3_string_client_hello(packet: &[u8]) -> Option<String> {
     Some(ja3_string)
 }
 
+#[derive(Debug)]
 pub struct Ja3 {
     pub ja3_str: String,
     pub hash: Digest,
@@ -164,12 +167,11 @@ mod tests {
 
     #[test]
     fn it_works() {
-        let ja3s = process_pcap("test.pcap").unwrap();
+        let _ja3s = process_pcap("test.pcap").unwrap();
     }
 
     #[test]
     fn test_ja3_client_hello_firefox_single_packet() {
-        env_logger::init();
         let expected_str = "771,49195-49199-52393-52392-49196-49200-49162-49161-49171-49172-51-57-47-53-10,0-23-65281-10-11-35-16-5-13-28,29-23-24-25,0";
         let expected_hash = "839bbe3ed07fed922ded5aaf714d6842";
 
@@ -180,14 +182,14 @@ mod tests {
     }
 
     #[test]
-    fn test_process_extensions() {
-    }
+    fn test_ja3_curl_full_stream() {
+        env_logger::init();
+        let expected_str = "771,4866-4867-4865-49196-49200-159-52393-52392-52394-49195-49199-158-49188-49192-107-49187-49191-103-49162-49172-57-49161-49171-51-157-156-61-60-53-47-255,0-11-10-13172-16-22-23-13-43-45-51-21,29-23-30-25-24,0-1-2";
+        let expected_hash = "456523fc94726331a4d5a2e1d40b2cd7";
 
-    //#[test]
-    //fn test_firefox_single_packet_pcap() {
-    //    let mut cap = Capture::from_file("test.pcap").unwrap();
-    //    let packet = cap.next().unwrap();
-    //    let ja3_digest = ja3_hash_client_hello(&packet);
-    //    //assert_eq!(ja3_digest, Some([]));
-    //}
+        let mut ja3s = process_pcap("curl.pcap").unwrap();
+        let ja3 = ja3s.pop().unwrap();
+        assert_eq!(ja3.ja3_str, expected_str);
+        assert_eq!(format!("{:x}", ja3.hash), expected_hash);
+    }
 }
