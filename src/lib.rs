@@ -7,6 +7,7 @@ use pnet::packet::*;
 use pnet::packet::ethernet::EtherType;
 use pnet::packet::ip::IpNextHeaderProtocol;
 use tls_parser::parse_tls_plaintext;
+use tls_parser::tls_extensions::{parse_tls_extensions, TlsExtension, TlsExtensionType};
 use tls_parser::tls::{TlsRecordType, TlsMessage, TlsMessageHandshake};
 
 // curl ja3 hash: 456523fc94726331a4d5a2e1d40b2cd7
@@ -24,7 +25,41 @@ pub enum Error {
 
 type Result<T> = std::result::Result<T, Error>;
 
-pub fn ja3_hash_client_hello(packet: &[u8]) -> Option<Digest> {
+fn process_extensions(extensions: &[u8]) -> Option<String> {
+    let mut ja3_exts = String::new();
+    let mut supported_groups = String::new();
+    let mut ec_points = String::new();
+    let (_, exts) = parse_tls_extensions(extensions).unwrap();
+    for extension in exts {
+        // TODO: GREASE
+        let ext_val = u16::from(TlsExtensionType::from(&extension));
+        eprintln!("Ext: {:?}", ext_val);
+        ja3_exts.push_str(&format!("{}-", ext_val));
+        match extension {
+            TlsExtension::EllipticCurves(curves) => {
+                for curve in curves {
+                    eprintln!("curve: {}", curve.0);
+                    supported_groups.push_str(&format!("{}-", curve.0));
+                }
+            },
+            TlsExtension::EcPointFormats(points) => {
+                eprintln!("Points: {:x?}", points);
+                for point in points {
+                    ec_points.push_str(&format!("{}-", point));
+                }
+            },
+            _ => {},
+        }
+    }
+    supported_groups.pop();
+    ec_points.pop();
+    eprintln!("{}", supported_groups);
+    eprintln!("{}", ec_points);
+    let ret = format!("{},{},{}", ja3_exts, supported_groups, ec_points);
+    Some(ret)
+}
+
+pub fn ja3_string_client_hello(packet: &[u8]) -> Option<String> {
     let mut ja3_string = String::new();
     let res = parse_tls_plaintext(packet);
     match res {
@@ -45,6 +80,10 @@ pub fn ja3_hash_client_hello(packet: &[u8]) -> Option<Digest> {
                             ja3_string.push_str(&format!("{}-", u16::from(cipher)));
                         }
                         ja3_string.pop();
+                        if let Some(extensions) = contents.ext {
+                            let ext = process_extensions(extensions).unwrap();
+                            ja3_string.push_str(&ext);
+                        }
                     }
                 }
             }
@@ -55,7 +94,7 @@ pub fn ja3_hash_client_hello(packet: &[u8]) -> Option<Digest> {
     }
 
     eprintln!("ja3_string: {}", ja3_string);
-    None
+    Some(ja3_string)
 }
 
 pub fn process_pcap<P: AsRef<Path>>(pcap_path: P) -> Result<()> {
@@ -91,7 +130,7 @@ pub fn process_pcap<P: AsRef<Path>>(pcap_path: P) -> Result<()> {
         }
 
         eprintln!("sending handshake");
-        let digest = ja3_hash_client_hello(&handshake);
+        let digest = ja3_string_client_hello(&handshake);
     }
 
     Ok(())
@@ -104,6 +143,10 @@ mod tests {
     #[test]
     fn it_works() {
         process_pcap("test.pcap").unwrap();
+    }
+
+    #[test]
+    fn test_process_extensions() {
     }
 
     //#[test]
