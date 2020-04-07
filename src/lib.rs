@@ -226,46 +226,8 @@ mod tests {
 
     // TODO: Add GREASE test case
 
-    //#[test]
-    //fn it_works() {
-    //    let _ja3s = process_pcap("test.pcap").unwrap();
-    //}
-
-    //#[test]
-    //fn test_ja3_client_hello_firefox_single_packet() {
-    //    let expected_str = "771,49195-49199-52393-52392-49196-49200-49162-49161-49171-49172-51-57-47-53-10,0-23-65281-10-11-35-16-5-13-28,29-23-24-25,0";
-    //    let expected_hash = "839bbe3ed07fed922ded5aaf714d6842";
-
-    //    let mut ja3s = process_pcap("test.pcap").unwrap();
-    //    let ja3 = ja3s.pop().unwrap();
-    //    assert_eq!(ja3.ja3_str, expected_str);
-    //    assert_eq!(format!("{:x}", ja3.hash), expected_hash);
-    //}
-
-    //#[test]
-    //fn test_ja3_curl_full_stream() {
-    //    let expected_str = "771,4866-4867-4865-49196-49200-159-52393-52392-52394-49195-49199-158-49188-49192-107-49187-49191-103-49162-49172-57-49161-49171-51-157-156-61-60-53-47-255,0-11-10-13172-16-22-23-13-43-45-51-21,29-23-30-25-24,0-1-2";
-    //    let expected_hash = "456523fc94726331a4d5a2e1d40b2cd7";
-
-    //    let mut ja3s = process_pcap("curl.pcap").unwrap();
-    //    let ja3 = ja3s.pop().unwrap();
-    //    assert_eq!(ja3.ja3_str, expected_str);
-    //    assert_eq!(format!("{:x}", ja3.hash), expected_hash);
-    //}
-
-    //#[test]
-    //fn test_ja3_curl_full_stream_ipv6() {
-    //    let expected_str = "771,4866-4867-4865-49196-49200-159-52393-52392-52394-49195-49199-158-49188-49192-107-49187-49191-103-49162-49172-57-49161-49171-51-157-156-61-60-53-47-255,0-11-10-13172-16-22-23-13-43-45-51-21,29-23-30-25-24,0-1-2";
-    //    let expected_hash = "456523fc94726331a4d5a2e1d40b2cd7";
-
-    //    let mut ja3s = process_pcap("curl-ipv6.pcap").unwrap();
-    //    let ja3 = ja3s.pop().unwrap();
-    //    assert_eq!(ja3.ja3_str, expected_str);
-    //    assert_eq!(format!("{:x}", ja3.hash), expected_hash);
-    //}
-
     #[test]
-    fn new_test_ja3_client_hello_firefox_single_packet() {
+    fn test_ja3_client_hello_firefox_single_packet() {
         let expected_str = "771,49195-49199-52393-52392-49196-49200-49162-49161-49171-49172-51-57-47-53-10,0-23-65281-10-11-35-16-5-13-28,29-23-24-25,0";
         let expected_hash = "839bbe3ed07fed922ded5aaf714d6842";
 
@@ -275,5 +237,31 @@ mod tests {
         let ja3_hash = ja3.pop().unwrap();
         assert_eq!(ja3_hash.ja3_str, expected_str);
         assert_eq!(format!("{:x}", ja3_hash.hash), expected_hash);
+    }
+
+    #[test]
+    fn test_ja3_curl_full_stream() {
+        let expected_str = "771,4866-4867-4865-49196-49200-159-52393-52392-52394-49195-49199-158-49188-49192-107-49187-49191-103-49162-49172-57-49161-49171-51-157-156-61-60-53-47-255,0-11-10-13172-16-22-23-13-43-45-51-21,29-23-30-25-24,0-1-2";
+        let expected_hash = "456523fc94726331a4d5a2e1d40b2cd7";
+
+        let mut ja3s = Ja3::new("curl.pcap")
+                            .process_pcap()
+                            .unwrap();
+        let ja3 = ja3s.pop().unwrap();
+        assert_eq!(ja3.ja3_str, expected_str);
+        assert_eq!(format!("{:x}", ja3.hash), expected_hash);
+    }
+
+    #[test]
+    fn test_ja3_curl_full_stream_ipv6() {
+        let expected_str = "771,4866-4867-4865-49196-49200-159-52393-52392-52394-49195-49199-158-49188-49192-107-49187-49191-103-49162-49172-57-49161-49171-51-157-156-61-60-53-47-255,0-11-10-13172-16-22-23-13-43-45-51-21,29-23-30-25-24,0-1-2";
+        let expected_hash = "456523fc94726331a4d5a2e1d40b2cd7";
+
+        let mut ja3s = Ja3::new("curl-ipv6.pcap")
+                            .process_pcap()
+                            .unwrap();
+        let ja3 = ja3s.pop().unwrap();
+        assert_eq!(ja3.ja3_str, expected_str);
+        assert_eq!(format!("{:x}", ja3.hash), expected_hash);
     }
 }
