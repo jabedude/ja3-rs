@@ -19,11 +19,18 @@ use tls_parser::tls::{TlsRecordType, TlsMessage, TlsMessageHandshake};
 
 lazy_static! {
     static ref IPTYPE: IpNextHeaderProtocol = IpNextHeaderProtocol::new(6);
+    static ref GREASE: Vec<u16> = vec![0x0a0a, 0x1a1a, 0x2a2a, 0x3a3a, 0x4a4a, 0x5a5a, 0x6a6a, 0x7a7a, 0x8a8a, 0x9a9a, 0xaaaa, 0xbaba, 0xcaca, 0xdada, 0xeaea, 0xfafa];
 }
 
 #[derive(Debug)]
 pub enum Error {
     ParseError,
+}
+
+#[derive(Debug)]
+pub struct Ja3 {
+    pub ja3_str: String,
+    pub hash: Digest,
 }
 
 type Result<T> = std::result::Result<T, Error>;
@@ -34,8 +41,10 @@ fn process_extensions(extensions: &[u8]) -> Option<String> {
     let mut ec_points = String::new();
     let (_, exts) = parse_tls_extensions(extensions).unwrap();
     for extension in exts {
-        // TODO: GREASE
         let ext_val = u16::from(TlsExtensionType::from(&extension));
+        if GREASE.contains(&ext_val) {
+            continue;
+        }
         info!("Ext: {:?}", ext_val);
         ja3_exts.push_str(&format!("{}-", ext_val));
         match extension {
@@ -103,12 +112,6 @@ pub fn ja3_string_client_hello(packet: &[u8]) -> Option<String> {
     Some(ja3_string)
 }
 
-#[derive(Debug)]
-pub struct Ja3 {
-    pub ja3_str: String,
-    pub hash: Digest,
-}
-
 pub fn process_pcap<P: AsRef<Path>>(pcap_path: P) -> Result<Vec<Ja3>> {
     let mut results: Vec<Ja3> = Vec::new();
     let mut cap = Capture::from_file(pcap_path).unwrap();
@@ -164,6 +167,8 @@ mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
     use env_logger;
+
+    // TODO: Add GREASE test case
 
     #[test]
     fn it_works() {
