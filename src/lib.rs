@@ -1,3 +1,4 @@
+use std::fmt;
 use std::path::Path;
 
 use lazy_static::*;
@@ -35,6 +36,12 @@ pub enum Error {
 pub struct Ja3 {
     pub ja3_str: String,
     pub hash: Digest,
+}
+
+impl fmt::Display for Ja3 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} --> {:x}", self.ja3_str, self.hash)
+    }
 }
 
 type Result<T> = std::result::Result<T, Error>;
