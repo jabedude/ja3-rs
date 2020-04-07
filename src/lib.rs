@@ -7,6 +7,7 @@ use pcap::Capture;
 use pnet::packet::*;
 use pnet::packet::ethernet::EtherType;
 use pnet::packet::ip::IpNextHeaderProtocol;
+use pnet::packet::ip::IpNextHeaderProtocols;
 use tls_parser::parse_tls_plaintext;
 use tls_parser::tls_extensions::{parse_tls_extensions, TlsExtension, TlsExtensionType};
 use tls_parser::tls::{TlsRecordType, TlsMessage, TlsMessageHandshake};
@@ -118,18 +119,28 @@ pub fn process_pcap<P: AsRef<Path>>(pcap_path: P) -> Result<Vec<Ja3>> {
     while let Ok(packet) = cap.next() {
         let ether = ethernet::EthernetPacket::new(&packet).ok_or(Error::ParseError)?;
         info!("\nether packet: {:?} len: {}", ether, ether.packet_size());
-        if ether.get_ethertype() != EtherType(0x0800) {
-            continue;
-        }
+        let tcp_start = match ether.get_ethertype() {
+            EtherType(0x0800) => {
+                let ip = ipv4::Ipv4Packet::new(&packet[ether.packet_size()..]).ok_or(Error::ParseError)?;
+                info!("\nipv4 packet: {:?}", ip);
+                if ip.get_next_level_protocol() != *IPTYPE {
+                    continue;
+                }
+                let iphl = ip.get_header_length() as usize * 4;
+                iphl + ether.packet_size()
+            },
+            EtherType(0x86dd) => {
+                let ip = ipv6::Ipv6Packet::new(&packet[ether.packet_size()..]).ok_or(Error::ParseError)?;
+                info!("\nipv6 packet: {:?}", ip);
+                if ip.get_next_header() != IpNextHeaderProtocols::Tcp {
+                    continue;
+                }
+                let iphl = 40;
+                iphl + ether.packet_size()
+            },
+            _ => return Err(Error::ParseError),
+        };
 
-        let ip = ipv4::Ipv4Packet::new(&packet[ether.packet_size()..]).ok_or(Error::ParseError)?;
-        info!("\nip packet: {:?}", ip);
-        if ip.get_next_level_protocol() != *IPTYPE {
-            continue;
-        }
-
-        let iphl = ip.get_header_length() as usize * 4;
-        let tcp_start = iphl + ether.packet_size();
         let tcp = tcp::TcpPacket::new(&packet[tcp_start..]).ok_or(Error::ParseError)?;
         info!("tcp: {:?}", tcp);
         if tcp.get_destination() != 443 {
@@ -199,7 +210,6 @@ mod tests {
 
     #[test]
     fn test_ja3_curl_full_stream_ipv6() {
-        env_logger::init();
         let expected_str = "771,4866-4867-4865-49196-49200-159-52393-52392-52394-49195-49199-158-49188-49192-107-49187-49191-103-49162-49172-57-49161-49171-51-157-156-61-60-53-47-255,0-11-10-13172-16-22-23-13-43-45-51-21,29-23-30-25-24,0-1-2";
         let expected_hash = "456523fc94726331a4d5a2e1d40b2cd7";
 
