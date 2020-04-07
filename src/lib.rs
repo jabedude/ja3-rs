@@ -97,8 +97,10 @@ impl Ja3 {
 
             let tcp = tcp::TcpPacket::new(&packet[tcp_start..]).ok_or(Error::ParseError)?;
             info!("tcp: {:?}", tcp);
-            if tcp.get_destination() != 443 {
-                continue;
+            if self.i.tls_port != 0 {
+                if tcp.get_destination() != 443 {
+                    continue;
+                }
             }
 
             info!("pack size: {}", tcp.packet_size());
@@ -108,19 +110,23 @@ impl Ja3 {
             if handshake.len() <= 0 {
                 continue;
             }
-            info!("handshake: {:x?}", handshake);
             if handshake[0] != 0x16 {
                 continue;
             }
+            info!("handshake: {:x?}", handshake);
 
             info!("sending handshake {:?}", handshake);
             let ja3_string = self.ja3_string_client_hello(&handshake).unwrap();
+            if ja3_string == "" {
+                continue;
+            }
             let hash = md5::compute(&ja3_string.as_bytes());
             let ja3_res = Ja3Hash {
                 ja3_str: ja3_string,
                 hash: hash,
             };
 
+            info!("Adding JA3: {:?}", ja3_res);
             results.push(ja3_res);
         }
 
@@ -197,6 +203,7 @@ impl Ja3 {
             }
             _ => {
                 info!("ERROR");
+                return None;
             }
         }
 
@@ -270,7 +277,8 @@ mod tests {
         let expected_str = "771,4866-4867-4865-49196-49200-163-159-52393-52392-52394-49327-49325-49315-49311-49245-49249-49239-49235-49188-49192-107-106-49267-49271-196-195-49162-49172-57-56-136-135-157-49313-49309-49233-61-192-53-132-49195-49199-162-158-49326-49324-49314-49310-49244-49248-49238-49234-49187-49191-103-64-49266-49270-190-189-49161-49171-51-50-154-153-69-68-156-49312-49308-49232-60-186-47-150-65-255,0-11-10-35-22-23-13-43-45-51-21,29-23-30-25-24,0-1-2";
         let expected_hash = "10a6b69a81bac09072a536ce9d35dd43";
 
-        let mut ja3 = Ja3::new("ncat.pcap")
+        let mut ja3 = Ja3::new("ncat-port-4450.pcap")
+                            .any_port()
                             .process_pcap()
                             .unwrap();
         let ja3_hash = ja3.pop().unwrap();
