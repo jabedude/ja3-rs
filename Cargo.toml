@@ -9,6 +9,9 @@ docs = "https://docs.rs/ja3"
 repository = "https://github.com/jabedude/ja3-rs/"
 readme = "README.md"
 licence = "BSD-3-Clause"
+exclude = [
+    "*.pcap",
+]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
