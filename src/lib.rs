@@ -1,3 +1,28 @@
+//! JA3 Hash
+//!
+//! A small TLS fingerprinting library written in Rust.
+//!
+//! This crate enables a consumer to fingerprint the ClientHello portion of a TLS handshake.
+//! It can hash TLS handshakes over IPv4 and IPv6. It heavily depends on the [tls-parser
+//! project](https://github.com/rusticata/tls-parser) from Rusticata.
+//!
+//! See the original [JA3 project](https://github.com/salesforce/ja3) for more information.
+//!
+//! Example:
+//!
+//! ```rust
+//! use ja3::Ja3;
+//!
+//! let mut ja3 = Ja3::new("path-to-pcap.pcap")
+//!                     .process_pcap()
+//!                     .unwrap();
+//!
+//! // Now we have a Vec of Ja3Hash objects
+//! for hash in ja3 {
+//!     println!("{}", hash);
+//! }
+//! ```
+
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -28,14 +53,19 @@ pub enum Error {
     ParseError,
 }
 
+/// A JA3 hash builder. This provides options about how to extract a JA3 hash from a TLS handshake.
 #[derive(Debug)]
 pub struct Ja3 {
     i: Ja3Inner,
 }
 
+/// The output of a JA3 hash object. This consists of the JA3 string and MD5 hash.
 #[derive(Debug, Eq)]
 pub struct Ja3Hash {
+    /// The string consisting of the SSLVersion,Cipher,SSLExtension,EllipticCurve,EllipticCurvePointFormat
+    /// See the original [JA3 specification](https://github.com/salesforce/ja3#how-it-works) for more info.
     pub ja3_str: String,
+    /// The MD5 hash of `ja3_str`.
     pub hash: Digest,
 }
 
@@ -46,6 +76,8 @@ struct Ja3Inner {
 }
 
 impl Ja3 {
+    /// Creates a new Ja3 object that will extract JA3 hash/es from the packet capture
+    /// located at `pcap_path`.
     pub fn new<P: AsRef<Path>>(pcap_path: P) -> Self {
         let mut path = PathBuf::new();
         path.push(pcap_path);
@@ -57,11 +89,14 @@ impl Ja3 {
         Ja3 { i: i }
     }
 
+    /// Change the hasher behavior to scan for TLS handshakes occuring on *any* TCP port. By
+    /// default we only fingerprint handshakes on TCP 443.
     pub fn any_port<'a>(&'a mut self) -> &'a mut Self {
         self.i.tls_port = 0;
         self
     }
 
+    /// Scans the provided packet capture for TLS handshakes and returns JA3 hashes for any found.
     pub fn process_pcap(&self) -> Result<Vec<Ja3Hash>> {
         let mut results: Vec<Ja3Hash> = Vec::new();
         let mut cap = Capture::from_file(&self.i.path).unwrap();
