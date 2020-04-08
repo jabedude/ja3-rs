@@ -8,7 +8,7 @@ homepage = "https://github.com/jabedude/ja3-rs/"
 docs = "https://docs.rs/ja3"
 repository = "https://github.com/jabedude/ja3-rs/"
 readme = "README.md"
-licence = "BSD-3-Clause"
+license = "BSD-3-Clause"
 exclude = [
     "*.pcap",
 ]
