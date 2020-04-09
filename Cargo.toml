@@ -1,6 +1,6 @@
 [package]
 name = "ja3"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Joshua Abraham <sinisterpatrician@gmail.com>"]
 edition = "2018"
 description = "JA3 hash library in Rust"
