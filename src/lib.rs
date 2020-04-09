@@ -13,7 +13,7 @@
 //! ```rust
 //! use ja3::Ja3;
 //!
-//! let mut ja3 = Ja3::new("path-to-pcap.pcap")
+//! let mut ja3 = Ja3::new("test.pcap")
 //!                     .process_pcap()
 //!                     .unwrap();
 //!
@@ -180,15 +180,17 @@ impl Ja3 {
             match extension {
                 TlsExtension::EllipticCurves(curves) => {
                     for curve in curves {
-                        info!("curve: {}", curve.0);
-                        supported_groups.push_str(&format!("{}-", curve.0));
+                        if !GREASE.contains(&curve.0) {
+                            info!("curve: {}", curve.0);
+                            supported_groups.push_str(&format!("{}-", curve.0));
+                        }
                     }
                 }
                 TlsExtension::EcPointFormats(points) => {
-                    info!("Points: {:x?}", points);
-                    for point in points {
-                        ec_points.push_str(&format!("{}-", point));
-                    }
+                        info!("Points: {:x?}", points);
+                        for point in points {
+                            ec_points.push_str(&format!("{}-", point));
+                        }
                 }
                 _ => {}
             }
@@ -196,8 +198,8 @@ impl Ja3 {
         ja3_exts.pop();
         supported_groups.pop();
         ec_points.pop();
-        info!("{}", supported_groups);
-        info!("{}", ec_points);
+        info!("Supported groups: {}", supported_groups);
+        info!("EC Points: {}", ec_points);
         let ret = format!("{},{},{}", ja3_exts, supported_groups, ec_points);
         Some(ret)
     }
@@ -221,7 +223,9 @@ impl Ja3 {
                             ja3_string.push_str(&format!("{},", u16::from(contents.version)));
                             for cipher in contents.ciphers {
                                 info!("handshake cipher: {}", u16::from(cipher));
-                                ja3_string.push_str(&format!("{}-", u16::from(cipher)));
+                                if !GREASE.contains(&cipher) {
+                                    ja3_string.push_str(&format!("{}-", u16::from(cipher)));
+                                }
                             }
                             ja3_string.pop();
                             ja3_string.push(',');
