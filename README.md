@@ -1,6 +1,8 @@
 # ja3-rs
 
+[![crates.io](https://img.shields.io/crates/v/ja3.svg)](https://crates.io/crates/ja3)
 [![Documentation](https://docs.rs/ja3/badge.svg)](https://docs.rs/ja3/)
+[![license](https://img.shields.io/badge/license-BSD3.0-blue.svg)](https://github.com/jabedude/ja3-rs/LICENSE)
 
 A small TLS fingerprinting library written in Rust.
 
