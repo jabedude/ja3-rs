@@ -263,6 +263,17 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     // TODO: Add GREASE test case
+    #[test]
+    fn test_ja3_client_hello_chrome_grease_single_packet() {
+        env_logger::init();
+        let expected_str = "771,4865-4866-4867-49195-49199-49196-49200-52393-52392-49171-49172-156-157-47-53-10,0-23-65281-10-11-35-16-5-13-18-51-45-43-27-21,29-23-24,0";
+        let expected_hash = "66918128f1b9b03303d77c6f2eefd128";
+
+        let mut ja3 = Ja3::new("chrome-grease-single.pcap").process_pcap().unwrap();
+        let ja3_hash = ja3.pop().unwrap();
+        assert_eq!(ja3_hash.ja3_str, expected_str);
+        assert_eq!(format!("{:x}", ja3_hash.hash), expected_hash);
+    }
 
     #[test]
     fn test_ja3_client_hello_firefox_single_packet() {
