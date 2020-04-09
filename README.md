@@ -1,5 +1,7 @@
 # ja3-rs
 
+[![Documentation](https://docs.rs/ja3/badge.svg)](https://docs.rs/ja3/)
+
 A small TLS fingerprinting library written in Rust.
 
 This crate enables a consumer to fingerprint the ClientHello portion of a TLS handshake.
