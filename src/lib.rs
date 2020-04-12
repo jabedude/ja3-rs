@@ -266,7 +266,6 @@ mod tests {
     use env_logger;
     use pretty_assertions::assert_eq;
 
-    // TODO: Add GREASE test case
     #[test]
     fn test_ja3_client_hello_chrome_grease_single_packet() {
         env_logger::init();
