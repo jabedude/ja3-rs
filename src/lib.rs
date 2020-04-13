@@ -298,15 +298,21 @@ mod tests {
     use nix::unistd::{fork, ForkResult};
     use pretty_assertions::assert_eq;
 
+    // NOTE: Any test for the live-capture feature requires elevated privileges.
+
     #[test] #[ignore]
-    fn test_live() {
-        env_logger::init();
+    fn test_ja3_client_hello_chrome_grease_single_packet_live() {
+        let expected_str = "771,4865-4866-4867-49195-49199-49196-49200-52393-52392-49171-49172-156-157-47-53-10,0-23-65281-10-11-35-16-5-13-18-51-45-43-27-21,29-23-24,0";
+        let expected_hash = "66918128f1b9b03303d77c6f2eefd128";
 
         match fork() {
             Ok(ForkResult::Parent { child, .. }) => {
                 let mut ja3 = Ja3::new("lo")
                                     .process_live(|x| {
                                         println!("{}", x);
+                                        assert_eq!(x.ja3_str, expected_str);
+                                        assert_eq!(format!("{:x}", x.hash), expected_hash);
+                                        std::process::exit(0);
                                     })
                                     .unwrap();
             },
