@@ -29,7 +29,7 @@ use std::path::{Path, PathBuf};
 use lazy_static::*;
 use log::info;
 use md5::{self, Digest};
-use pcap::{Capture, Device};
+use pcap::Capture;
 use pnet::packet::ethernet::EtherType;
 use pnet::packet::ip::IpNextHeaderProtocol;
 use pnet::packet::ip::IpNextHeaderProtocols;
