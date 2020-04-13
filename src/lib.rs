@@ -41,6 +41,7 @@
 
 use std::fmt;
 use std::ffi::{OsStr, OsString};
+use std::net::IpAddr;
 
 use lazy_static::*;
 use log::info;
@@ -87,6 +88,10 @@ pub struct Ja3Hash {
     pub ja3_str: String,
     /// The MD5 hash of `ja3_str`.
     pub hash: Digest,
+    /// The destination IP address of the TLS handshake.
+    pub source: IpAddr,
+    /// The source IP address of the TLS handshake.
+    pub destination: IpAddr,
 }
 
 impl Ja3 {
@@ -118,18 +123,13 @@ impl Ja3 {
         let mut results: Vec<Ja3Hash> = Vec::new();
         let mut cap = Capture::from_file(&self.i.path).unwrap();
         while let Ok(packet) = cap.next() {
-            let ja3_string = match self.process_packet_common(&packet) {
+            let ja3_hash = match self.process_packet_common(&packet) {
                 Ok(s) => s,
                 Err(_) => continue,
             };
-            let hash = md5::compute(&ja3_string.as_bytes());
-            let ja3_res = Ja3Hash {
-                ja3_str: ja3_string,
-                hash: hash,
-            };
 
-            info!("Adding JA3: {:?}", ja3_res);
-            results.push(ja3_res);
+            info!("Adding JA3: {:?}", ja3_hash);
+            results.push(ja3_hash);
         }
 
         Ok(results)
@@ -141,24 +141,21 @@ impl Ja3 {
         let mut cap = Capture::from_device(self.i.path.to_str().unwrap())?.open()?;
         info!("cap: {:?}", self.i.path);
         while let Ok(packet) = cap.next() {
-            let ja3_string = match self.process_packet_common(&packet) {
+            let ja3_hash = match self.process_packet_common(&packet) {
                 Ok(s) => s,
                 Err(_) => continue,
             };
-            let hash = md5::compute(&ja3_string.as_bytes());
-            let ja3_res = Ja3Hash {
-                ja3_str: ja3_string,
-                hash: hash,
-            };
 
-            info!("Calling callback with JA3: {:?}", ja3_res);
-            cb(&ja3_res);
+            info!("Calling callback with JA3: {:?}", ja3_hash);
+            cb(&ja3_hash);
         }
 
         Ok(())
     }
 
-    fn process_packet_common(&self, packet: &[u8]) -> Result<String, Error> {
+    fn process_packet_common(&self, packet: &[u8]) -> Result<Ja3Hash, Error> {
+        let saddr;
+        let daddr;
         let ether = ethernet::EthernetPacket::new(&packet).ok_or(Ja3Error::ParseError)?;
         info!("\nether packet: {:?} len: {}", ether, ether.packet_size());
         let tcp_start = match ether.get_ethertype() {
@@ -170,12 +167,16 @@ impl Ja3 {
                     return Err(Ja3Error::ParseError)?;
                 }
                 let iphl = ip.get_header_length() as usize * 4;
+                saddr = IpAddr::V4(ip.get_source());
+                daddr = IpAddr::V4(ip.get_destination());
                 iphl + ether.packet_size()
             }
             EtherType(0x86dd) => {
                 let ip = ipv6::Ipv6Packet::new(&packet[ether.packet_size()..])
                     .ok_or(Ja3Error::ParseError)?;
                 info!("\nipv6 packet: {:?}", ip);
+                saddr = IpAddr::V6(ip.get_source());
+                daddr = IpAddr::V6(ip.get_destination());
                 if ip.get_next_header() != IpNextHeaderProtocols::Tcp {
                     return Err(Ja3Error::NotHandshake)?;
                 }
@@ -211,7 +212,15 @@ impl Ja3 {
             return Err(Ja3Error::NotHandshake)?;
         }
 
-        Ok(ja3_string)
+        let hash = md5::compute(&ja3_string.as_bytes());
+        let ja3_res = Ja3Hash {
+            ja3_str: ja3_string,
+            hash: hash,
+            source: saddr,
+            destination: daddr,
+        };
+
+        Ok(ja3_res)
     }
 
     fn process_extensions(&self, extensions: &[u8]) -> Option<String> {
@@ -299,7 +308,7 @@ impl Ja3 {
 
 impl fmt::Display for Ja3Hash {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} --> {:x}", self.ja3_str, self.hash)
+        write!(f, "[{} --> {}] {} {:x}", self.source, self.destination, self.ja3_str, self.hash)
     }
 }
 
