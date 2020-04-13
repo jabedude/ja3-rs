@@ -4,13 +4,16 @@
 //!
 //! This crate enables a consumer to fingerprint the ClientHello portion of a TLS handshake.
 //! It can hash TLS handshakes over IPv4 and IPv6. It heavily depends on the [tls-parser
-//! project](https://github.com/rusticata/tls-parser) from Rusticata.
+//! project](https://github.com/rusticata/tls-parser) from Rusticata. 
+//!
+//! It supports generating fingerprints from packet capture files as well as live-captures 
+//! on a network interface, both using libpcap.
 //!
 //! See the original [JA3 project](https://github.com/salesforce/ja3) for more information.
 //!
-//! Example:
+//! Example of fingerprinting a packet capture file:
 //!
-//! ```rust
+//! ```rust,no_run
 //! use ja3::Ja3;
 //!
 //! let mut ja3 = Ja3::new("test.pcap")
@@ -21,6 +24,19 @@
 //! for hash in ja3 {
 //!     println!("{}", hash);
 //! }
+//! ```
+//!
+//! Example of fingerprinting a live capture:
+//!
+//! ```rust,no_run
+//! use ja3::Ja3;
+//!
+//! let mut ja3 = Ja3::new("eth0")
+//!                     .process_live(|x| {
+//!                         println!("{}", x);
+//!                     })
+//!                     .unwrap();
+//!
 //! ```
 
 use std::fmt;
@@ -74,8 +90,11 @@ pub struct Ja3Hash {
 }
 
 impl Ja3 {
-    /// Creates a new Ja3 object that will extract JA3 hash/es from the packet capture
-    /// located at `pcap_path`.
+    /// Creates a new Ja3 object. 
+    ///
+    /// It will extract JA3 hashes from the packet capture located at `pcap_path` or 
+    /// the network interface named `pcap_path`, depending on whether the consumer calls 
+    /// `process_pcap` or `process_live`.
     pub fn new<S: AsRef<OsStr>>(pcap_path: S) -> Self {
         let mut path = OsString::new();
         path.push(pcap_path);
