@@ -321,17 +321,23 @@ impl PartialEq for Ja3Hash {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
     use std::process::Command;
     use env_logger;
     use nix::unistd::{fork, ForkResult};
     use pretty_assertions::assert_eq;
+    use rusty_fork::rusty_fork_id;
+    use rusty_fork::rusty_fork_test;
+    use rusty_fork::rusty_fork_test_name;
 
     // NOTE: Any test for the live-capture feature requires elevated privileges.
 
+    rusty_fork_test! {
     #[test] #[ignore]
     fn test_ja3_client_hello_chrome_grease_single_packet_live() {
         let expected_str = "771,4865-4866-4867-49195-49199-49196-49200-52393-52392-49171-49172-156-157-47-53-10,0-23-65281-10-11-35-16-5-13-18-51-45-43-27-21,29-23-24,0";
         let expected_hash = "66918128f1b9b03303d77c6f2eefd128";
+        let expected_daddr = IpAddr::V6("2607:f8b0:4004:814::2002".parse().unwrap());
 
         match fork() {
             Ok(ForkResult::Parent { child: _, .. }) => {
@@ -340,6 +346,7 @@ mod tests {
                                     println!("{}", x);
                                     assert_eq!(x.ja3_str, expected_str);
                                     assert_eq!(format!("{:x}", x.hash), expected_hash);
+                                    assert_eq!(expected_daddr, x.destination);
                                     std::process::exit(0);
                                 })
                                 .unwrap();
@@ -356,49 +363,58 @@ mod tests {
         }
 
     }
+    }
 
     #[test]
     fn test_ja3_client_hello_chrome_grease_single_packet() {
         let expected_str = "771,4865-4866-4867-49195-49199-49196-49200-52393-52392-49171-49172-156-157-47-53-10,0-23-65281-10-11-35-16-5-13-18-51-45-43-27-21,29-23-24,0";
         let expected_hash = "66918128f1b9b03303d77c6f2eefd128";
+        let expected_daddr = IpAddr::V6("2607:f8b0:4004:814::2002".parse().unwrap());
 
         let mut ja3 = Ja3::new("chrome-grease-single.pcap").process_pcap().unwrap();
         let ja3_hash = ja3.pop().unwrap();
         assert_eq!(ja3_hash.ja3_str, expected_str);
         assert_eq!(format!("{:x}", ja3_hash.hash), expected_hash);
+        assert_eq!(expected_daddr, ja3_hash.destination);
     }
 
     #[test]
     fn test_ja3_client_hello_firefox_single_packet() {
         let expected_str = "771,49195-49199-52393-52392-49196-49200-49162-49161-49171-49172-51-57-47-53-10,0-23-65281-10-11-35-16-5-13-28,29-23-24-25,0";
         let expected_hash = "839bbe3ed07fed922ded5aaf714d6842";
+        let expected_daddr = IpAddr::V4("34.209.18.179".parse().unwrap());
 
         let mut ja3 = Ja3::new("test.pcap").process_pcap().unwrap();
         let ja3_hash = ja3.pop().unwrap();
         assert_eq!(ja3_hash.ja3_str, expected_str);
         assert_eq!(format!("{:x}", ja3_hash.hash), expected_hash);
+        assert_eq!(expected_daddr, ja3_hash.destination);
     }
 
     #[test]
     fn test_ja3_curl_full_stream() {
         let expected_str = "771,4866-4867-4865-49196-49200-159-52393-52392-52394-49195-49199-158-49188-49192-107-49187-49191-103-49162-49172-57-49161-49171-51-157-156-61-60-53-47-255,0-11-10-13172-16-22-23-13-43-45-51-21,29-23-30-25-24,0-1-2";
         let expected_hash = "456523fc94726331a4d5a2e1d40b2cd7";
+        let expected_daddr = IpAddr::V4("93.184.216.34".parse().unwrap());
 
         let mut ja3s = Ja3::new("curl.pcap").process_pcap().unwrap();
         let ja3 = ja3s.pop().unwrap();
         assert_eq!(ja3.ja3_str, expected_str);
         assert_eq!(format!("{:x}", ja3.hash), expected_hash);
+        assert_eq!(expected_daddr, ja3.destination);
     }
 
     #[test]
     fn test_ja3_curl_full_stream_ipv6() {
         let expected_str = "771,4866-4867-4865-49196-49200-159-52393-52392-52394-49195-49199-158-49188-49192-107-49187-49191-103-49162-49172-57-49161-49171-51-157-156-61-60-53-47-255,0-11-10-13172-16-22-23-13-43-45-51-21,29-23-30-25-24,0-1-2";
         let expected_hash = "456523fc94726331a4d5a2e1d40b2cd7";
+        let expected_daddr = IpAddr::V6("2606:2800:220:1:248:1893:25c8:1946".parse().unwrap());
 
         let mut ja3s = Ja3::new("curl-ipv6.pcap").process_pcap().unwrap();
         let ja3 = ja3s.pop().unwrap();
         assert_eq!(ja3.ja3_str, expected_str);
         assert_eq!(format!("{:x}", ja3.hash), expected_hash);
+        assert_eq!(expected_daddr, ja3.destination);
     }
 
     #[test]
@@ -413,5 +429,6 @@ mod tests {
         let ja3_hash = ja3.pop().unwrap();
         assert_eq!(ja3_hash.ja3_str, expected_str);
         assert_eq!(format!("{:x}", ja3_hash.hash), expected_hash);
+        assert_eq!(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), ja3_hash.destination);
     }
 }
