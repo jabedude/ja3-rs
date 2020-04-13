@@ -29,7 +29,7 @@ use std::path::{Path, PathBuf};
 use lazy_static::*;
 use log::info;
 use md5::{self, Digest};
-use pcap::Capture;
+use pcap::{Capture, Device};
 use pnet::packet::ethernet::EtherType;
 use pnet::packet::ip::IpNextHeaderProtocol;
 use pnet::packet::ip::IpNextHeaderProtocols;
@@ -38,20 +38,16 @@ use tls_parser::parse_tls_plaintext;
 use tls_parser::tls::{TlsMessage, TlsMessageHandshake, TlsRecordType};
 use tls_parser::tls_extensions::{parse_tls_extensions, TlsExtension, TlsExtensionType};
 
+mod errors;
+use errors::*;
+use failure::Error;
+
 lazy_static! {
     static ref IPTYPE: IpNextHeaderProtocol = IpNextHeaderProtocol::new(6);
     static ref GREASE: Vec<u16> = vec![
         0x0a0a, 0x1a1a, 0x2a2a, 0x3a3a, 0x4a4a, 0x5a5a, 0x6a6a, 0x7a7a, 0x8a8a, 0x9a9a, 0xaaaa,
         0xbaba, 0xcaca, 0xdada, 0xeaea, 0xfafa
     ];
-}
-
-type Result<T> = std::result::Result<T, Error>;
-
-#[derive(Debug)]
-pub enum Error {
-    ParseError,
-    NotHandshake,
 }
 
 /// A JA3 hash builder. This provides options about how to extract a JA3 hash from a TLS handshake.
@@ -99,7 +95,7 @@ impl Ja3 {
     }
 
     /// Scans the provided packet capture for TLS handshakes and returns JA3 hashes for any found.
-    pub fn process_pcap(&self) -> Result<Vec<Ja3Hash>> {
+    pub fn process_pcap(&self) -> Result<Vec<Ja3Hash>, Error> {
         let mut results: Vec<Ja3Hash> = Vec::new();
         let mut cap = Capture::from_file(&self.i.path).unwrap();
         while let Ok(packet) = cap.next() {
@@ -120,44 +116,61 @@ impl Ja3 {
         Ok(results)
     }
 
-    /// Opens a live packet capture and scans packets for TLS handshakes and returns JA3 
-    /// hashes for any found.
-    pub fn process_live(&self) {
-        unimplemented!();
+    /// Opens a live packet capture and scans packets for TLS handshakes and calls `cb` with any 
+    /// JA3 hashes found.
+    pub fn process_live(&self, cb: impl Fn(&Ja3Hash)) -> Result<(), Error> {
+        let mut cap = Capture::from_device(self.i.path.to_str().unwrap())?.open()?;
+        info!("cap: {:?}", self.i.path);
+        while let Ok(packet) = cap.next() {
+            let ja3_string = match self.process_packet_common(&packet) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+            let hash = md5::compute(&ja3_string.as_bytes());
+            let ja3_res = Ja3Hash {
+                ja3_str: ja3_string,
+                hash: hash,
+            };
+
+            info!("Calling callback with JA3: {:?}", ja3_res);
+            cb(&ja3_res);
+        }
+
+        Ok(())
     }
 
-    fn process_packet_common(&self, packet: &[u8]) -> Result<String> {
-        let ether = ethernet::EthernetPacket::new(&packet).ok_or(Error::ParseError)?;
+    fn process_packet_common(&self, packet: &[u8]) -> Result<String, Error> {
+        let ether = ethernet::EthernetPacket::new(&packet).ok_or(Ja3Error::ParseError)?;
         info!("\nether packet: {:?} len: {}", ether, ether.packet_size());
         let tcp_start = match ether.get_ethertype() {
             EtherType(0x0800) => {
                 let ip = ipv4::Ipv4Packet::new(&packet[ether.packet_size()..])
-                    .ok_or(Error::ParseError)?;
+                    .ok_or(Ja3Error::ParseError)?;
                 info!("\nipv4 packet: {:?}", ip);
                 if ip.get_next_level_protocol() != *IPTYPE {
-                    return Err(Error::NotHandshake);
+                    return Err(Ja3Error::ParseError)?;
                 }
                 let iphl = ip.get_header_length() as usize * 4;
                 iphl + ether.packet_size()
             }
             EtherType(0x86dd) => {
                 let ip = ipv6::Ipv6Packet::new(&packet[ether.packet_size()..])
-                    .ok_or(Error::ParseError)?;
+                    .ok_or(Ja3Error::ParseError)?;
                 info!("\nipv6 packet: {:?}", ip);
                 if ip.get_next_header() != IpNextHeaderProtocols::Tcp {
-                    return Err(Error::NotHandshake);
+                    return Err(Ja3Error::NotHandshake)?;
                 }
                 let iphl = 40;
                 iphl + ether.packet_size()
             }
-            _ => return Err(Error::ParseError),
+            _ => return Err(Ja3Error::ParseError)?,
         };
 
-        let tcp = tcp::TcpPacket::new(&packet[tcp_start..]).ok_or(Error::ParseError)?;
+        let tcp = tcp::TcpPacket::new(&packet[tcp_start..]).ok_or(Ja3Error::ParseError)?;
         info!("tcp: {:?}", tcp);
         if self.i.tls_port != 0 {
             if tcp.get_destination() != 443 {
-                return Err(Error::NotHandshake);
+                return Err(Ja3Error::NotHandshake)?;
             }
         }
 
@@ -166,17 +179,17 @@ impl Ja3 {
         info!("handshake_start: {}", handshake_start);
         let handshake = &packet[handshake_start..];
         if handshake.len() <= 0 {
-            return Err(Error::NotHandshake);
+            return Err(Ja3Error::NotHandshake)?;
         }
         if handshake[0] != 0x16 {
-            return Err(Error::NotHandshake);
+            return Err(Ja3Error::NotHandshake)?;
         }
         info!("handshake: {:x?}", handshake);
 
         info!("sending handshake {:?}", handshake);
         let ja3_string = self.ja3_string_client_hello(&handshake).unwrap();
         if ja3_string == "" {
-            return Err(Error::NotHandshake);
+            return Err(Ja3Error::NotHandshake)?;
         }
 
         Ok(ja3_string)
@@ -280,21 +293,38 @@ impl PartialEq for Ja3Hash {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::Command;
     use env_logger;
+    use nix::unistd::{fork, ForkResult};
     use pretty_assertions::assert_eq;
 
-    #[test]
+    #[test] #[ignore]
     fn test_live() {
         env_logger::init();
 
-        let mut ja3 = Ja3::new("chrome-grease-single.pcap")
-                            .process_pcap()
-                            .unwrap();
+        match fork() {
+            Ok(ForkResult::Parent { child, .. }) => {
+                let mut ja3 = Ja3::new("lo")
+                                    .process_live(|x| {
+                                        println!("{}", x);
+                                    })
+                                    .unwrap();
+            },
+            Ok(ForkResult::Child) => {
+                let out = Command::new("tcpreplay")
+                            .arg("-i")
+                            .arg("lo")
+                            .arg("chrome-grease-single.pcap")
+                            .output()
+                            .expect("failed to execute process");
+            },
+            Err(_) => println!("Fork failed"),
+        }
+
     }
 
     #[test]
     fn test_ja3_client_hello_chrome_grease_single_packet() {
-        env_logger::init();
         let expected_str = "771,4865-4866-4867-49195-49199-49196-49200-52393-52392-49171-49172-156-157-47-53-10,0-23-65281-10-11-35-16-5-13-18-51-45-43-27-21,29-23-24,0";
         let expected_hash = "66918128f1b9b03303d77c6f2eefd128";
 
