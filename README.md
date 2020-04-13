@@ -11,14 +11,17 @@ This crate enables a consumer to fingerprint the ClientHello portion of a TLS ha
 It can hash TLS handshakes over IPv4 and IPv6. It heavily depends on the [tls-parser
 project](https://github.com/rusticata/tls-parser) from Rusticata.
 
+It supports generating fingerprints from packet capture files as well as live-captures 
+on a network interface, both using libpcap.
+
 See the original [JA3 project](https://github.com/salesforce/ja3) for more information.
 
-Example:
+Example of fingerprinting a packet capture file:
 
 ```rust
 use ja3::Ja3;
 
-let mut ja3 = Ja3::new("path-to-pcap.pcap")
+let mut ja3 = Ja3::new("test.pcap")
                     .process_pcap()
                     .unwrap();
 
@@ -26,4 +29,17 @@ let mut ja3 = Ja3::new("path-to-pcap.pcap")
 for hash in ja3 {
     println!("{}", hash);
 }
+```
+
+Example of fingerprinting a live capture:
+
+```rust
+use ja3::Ja3;
+
+let mut ja3 = Ja3::new("eth0")
+                    .process_live(|x| {
+                        println!("{}", x);
+                    })
+                    .unwrap();
+
 ```
