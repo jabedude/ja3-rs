@@ -24,7 +24,7 @@
 //! ```
 
 use std::fmt;
-use std::path::{Path, PathBuf};
+use std::ffi::{OsStr, OsString};
 
 use lazy_static::*;
 use log::info;
@@ -59,7 +59,7 @@ pub struct Ja3 {
 // TODO: add support for RAW captures
 #[derive(Debug)]
 struct Ja3Inner {
-    path: PathBuf,
+    path: OsString,
     tls_port: u16,
 }
 
@@ -76,8 +76,8 @@ pub struct Ja3Hash {
 impl Ja3 {
     /// Creates a new Ja3 object that will extract JA3 hash/es from the packet capture
     /// located at `pcap_path`.
-    pub fn new<P: AsRef<Path>>(pcap_path: P) -> Self {
-        let mut path = PathBuf::new();
+    pub fn new<S: AsRef<OsStr>>(pcap_path: S) -> Self {
+        let mut path = OsString::new();
         path.push(pcap_path);
         let i = Ja3Inner {
             path: path,
@@ -306,18 +306,18 @@ mod tests {
         let expected_hash = "66918128f1b9b03303d77c6f2eefd128";
 
         match fork() {
-            Ok(ForkResult::Parent { child, .. }) => {
-                let mut ja3 = Ja3::new("lo")
-                                    .process_live(|x| {
-                                        println!("{}", x);
-                                        assert_eq!(x.ja3_str, expected_str);
-                                        assert_eq!(format!("{:x}", x.hash), expected_hash);
-                                        std::process::exit(0);
-                                    })
-                                    .unwrap();
+            Ok(ForkResult::Parent { child: _, .. }) => {
+                let _ja3 = Ja3::new("lo")
+                                .process_live(|x| {
+                                    println!("{}", x);
+                                    assert_eq!(x.ja3_str, expected_str);
+                                    assert_eq!(format!("{:x}", x.hash), expected_hash);
+                                    std::process::exit(0);
+                                })
+                                .unwrap();
             },
             Ok(ForkResult::Child) => {
-                let out = Command::new("tcpreplay")
+                let _out = Command::new("tcpreplay")
                             .arg("-i")
                             .arg("lo")
                             .arg("chrome-grease-single.pcap")
