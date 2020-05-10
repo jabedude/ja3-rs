@@ -37,9 +37,10 @@ Example of fingerprinting a live capture:
 use ja3::Ja3;
 
 let mut ja3 = Ja3::new("eth0")
-                    .process_live(|x| {
-                        println!("{}", x);
-                    })
+                    .process_live()
                     .unwrap();
+while let Some(hash) = ja3.next() {
+    println!("Hash: {}", hash);
+}
 
 ```
