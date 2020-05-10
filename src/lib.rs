@@ -4,9 +4,9 @@
 //!
 //! This crate enables a consumer to fingerprint the ClientHello portion of a TLS handshake.
 //! It can hash TLS handshakes over IPv4 and IPv6. It heavily depends on the [tls-parser
-//! project](https://github.com/rusticata/tls-parser) from Rusticata. 
+//! project](https://github.com/rusticata/tls-parser) from Rusticata.
 //!
-//! It supports generating fingerprints from packet capture files as well as live-captures 
+//! It supports generating fingerprints from packet capture files as well as live-captures
 //! on a network interface, both using libpcap.
 //!
 //! See the original [JA3 project](https://github.com/salesforce/ja3) for more information.
@@ -32,21 +32,22 @@
 //! use ja3::Ja3;
 //!
 //! let mut ja3 = Ja3::new("eth0")
-//!                     .process_live(|x| {
-//!                         println!("{}", x);
-//!                     })
+//!                     .process_live()
 //!                     .unwrap();
+//! while let Some(hash) = ja3.next() {
+//!     println!("{}", hash);
+//! }
 //!
 //! ```
 
-use std::fmt;
 use std::ffi::{OsStr, OsString};
+use std::fmt;
 use std::net::IpAddr;
 
 use lazy_static::*;
 use log::info;
 use md5::{self, Digest};
-use pcap::Capture;
+use pcap::{Active, Capture};
 use pnet::packet::ethernet::EtherType;
 use pnet::packet::ip::IpNextHeaderProtocol;
 use pnet::packet::ip::IpNextHeaderProtocols;
@@ -94,11 +95,32 @@ pub struct Ja3Hash {
     pub destination: IpAddr,
 }
 
+/// Iterator of JA3 hashes captured during a live capture.
+pub struct Ja3Live {
+    cap: Capture<Active>,
+    ja3_inner: Ja3,
+}
+
+impl Iterator for Ja3Live {
+    type Item = Ja3Hash;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Ok(packet) = self.cap.next() {
+            match self.ja3_inner.process_packet_common(&packet) {
+                Ok(s) => return Some(s),
+                Err(_) => continue,
+            };
+        }
+
+        None
+    }
+}
+
 impl Ja3 {
-    /// Creates a new Ja3 object. 
+    /// Creates a new Ja3 object.
     ///
-    /// It will extract JA3 hashes from the packet capture located at `pcap_path` or 
-    /// the network interface named `pcap_path`, depending on whether the consumer calls 
+    /// It will extract JA3 hashes from the packet capture located at `pcap_path` or
+    /// the network interface named `pcap_path`, depending on whether the consumer calls
     /// `process_pcap` or `process_live`.
     pub fn new<S: AsRef<OsStr>>(pcap_path: S) -> Self {
         let mut path = OsString::new();
@@ -135,22 +157,25 @@ impl Ja3 {
         Ok(results)
     }
 
-    /// Opens a live packet capture and scans packets for TLS handshakes and calls `cb` with any 
+    /// Opens a live packet capture and scans packets for TLS handshakes and returns an iterator of
     /// JA3 hashes found.
-    pub fn process_live(&self, cb: impl Fn(&Ja3Hash)) -> Result<(), Error> {
-        let mut cap = Capture::from_device(self.i.path.to_str().unwrap())?.open()?;
+    pub fn process_live(self) -> Result<Ja3Live, Error> {
+        let cap = Capture::from_device(self.i.path.to_str().unwrap())?.open()?;
         info!("cap: {:?}", self.i.path);
-        while let Ok(packet) = cap.next() {
-            let ja3_hash = match self.process_packet_common(&packet) {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
+        //while let Ok(packet) = cap.next() {
+        //    let ja3_hash = match self.process_packet_common(&packet) {
+        //        Ok(s) => s,
+        //        Err(_) => continue,
+        //    };
 
-            info!("Calling callback with JA3: {:?}", ja3_hash);
-            cb(&ja3_hash);
-        }
+        //    info!("Calling callback with JA3: {:?}", ja3_hash);
+        //    cb(&ja3_hash);
+        //}
 
-        Ok(())
+        Ok(Ja3Live {
+            cap: cap,
+            ja3_inner: self,
+        })
     }
 
     fn process_packet_common(&self, packet: &[u8]) -> Result<Ja3Hash, Error> {
@@ -245,10 +270,10 @@ impl Ja3 {
                     }
                 }
                 TlsExtension::EcPointFormats(points) => {
-                        info!("Points: {:x?}", points);
-                        for point in points {
-                            ec_points.push_str(&format!("{}-", point));
-                        }
+                    info!("Points: {:x?}", points);
+                    for point in points {
+                        ec_points.push_str(&format!("{}-", point));
+                    }
                 }
                 _ => {}
             }
@@ -308,7 +333,11 @@ impl Ja3 {
 
 impl fmt::Display for Ja3Hash {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[{} --> {}] {} {:x}", self.source, self.destination, self.ja3_str, self.hash)
+        write!(
+            f,
+            "[{} --> {}] {} {:x}",
+            self.source, self.destination, self.ja3_str, self.hash
+        )
     }
 }
 
@@ -321,19 +350,19 @@ impl PartialEq for Ja3Hash {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-    use std::process::Command;
     use env_logger;
     use nix::unistd::{fork, ForkResult};
     use pretty_assertions::assert_eq;
     use rusty_fork::rusty_fork_id;
     use rusty_fork::rusty_fork_test;
     use rusty_fork::rusty_fork_test_name;
+    use std::net::{IpAddr, Ipv4Addr};
+    use std::process::Command;
 
     // NOTE: Any test for the live-capture feature requires elevated privileges.
 
     rusty_fork_test! {
-    #[test] #[ignore]
+    #[test]
     fn test_ja3_client_hello_chrome_grease_single_packet_live() {
         let expected_str = "771,4865-4866-4867-49195-49199-49196-49200-52393-52392-49171-49172-156-157-47-53-10,0-23-65281-10-11-35-16-5-13-18-51-45-43-27-21,29-23-24,0";
         let expected_hash = "66918128f1b9b03303d77c6f2eefd128";
@@ -341,15 +370,14 @@ mod tests {
 
         match fork() {
             Ok(ForkResult::Parent { child: _, .. }) => {
-                let _ja3 = Ja3::new("lo")
-                                .process_live(|x| {
-                                    println!("{}", x);
-                                    assert_eq!(x.ja3_str, expected_str);
-                                    assert_eq!(format!("{:x}", x.hash), expected_hash);
-                                    assert_eq!(expected_daddr, x.destination);
-                                    std::process::exit(0);
-                                })
-                                .unwrap();
+                let mut ja3 = Ja3::new("lo")
+                                .process_live().unwrap();
+                if let Some(x) = ja3.next() {
+                    assert_eq!(x.ja3_str, expected_str);
+                    assert_eq!(format!("{:x}", x.hash), expected_hash);
+                    assert_eq!(expected_daddr, x.destination);
+                    std::process::exit(0);
+                }
             },
             Ok(ForkResult::Child) => {
                 let _out = Command::new("tcpreplay")
@@ -371,7 +399,9 @@ mod tests {
         let expected_hash = "66918128f1b9b03303d77c6f2eefd128";
         let expected_daddr = IpAddr::V6("2607:f8b0:4004:814::2002".parse().unwrap());
 
-        let mut ja3 = Ja3::new("chrome-grease-single.pcap").process_pcap().unwrap();
+        let mut ja3 = Ja3::new("chrome-grease-single.pcap")
+            .process_pcap()
+            .unwrap();
         let ja3_hash = ja3.pop().unwrap();
         assert_eq!(ja3_hash.ja3_str, expected_str);
         assert_eq!(format!("{:x}", ja3_hash.hash), expected_hash);
@@ -429,6 +459,9 @@ mod tests {
         let ja3_hash = ja3.pop().unwrap();
         assert_eq!(ja3_hash.ja3_str, expected_str);
         assert_eq!(format!("{:x}", ja3_hash.hash), expected_hash);
-        assert_eq!(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), ja3_hash.destination);
+        assert_eq!(
+            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            ja3_hash.destination
+        );
     }
 }
