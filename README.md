@@ -44,3 +44,10 @@ while let Some(hash) = ja3.next() {
 }
 
 ```
+
+## Benchmarks
+
+| Command | Mean [ms] | Min [ms] | Max [ms] | Relative |
+|:---|---:|---:|---:|---:|
+| `ja3 huge-cap.pcap` | 153.2 ± 2.3 | 149.8 | 157.2 | 34.85 ± 2.82 |
+| `./target/release/examples/ja3 huge-cap.pcap` | 4.4 ± 0.3 | 3.6 | 5.5 | 1.00 |
