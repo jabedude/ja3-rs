@@ -399,7 +399,7 @@ mod tests {
         let expected_hash = "66918128f1b9b03303d77c6f2eefd128";
         let expected_daddr = IpAddr::V6("2607:f8b0:4004:814::2002".parse().unwrap());
 
-        let mut ja3 = Ja3::new("chrome-grease-single.pcap")
+        let mut ja3 = Ja3::new("tests/chrome-grease-single.pcap")
             .process_pcap()
             .unwrap();
         let ja3_hash = ja3.pop().unwrap();
@@ -414,7 +414,7 @@ mod tests {
         let expected_hash = "839bbe3ed07fed922ded5aaf714d6842";
         let expected_daddr = IpAddr::V4("34.209.18.179".parse().unwrap());
 
-        let mut ja3 = Ja3::new("test.pcap").process_pcap().unwrap();
+        let mut ja3 = Ja3::new("tests/test.pcap").process_pcap().unwrap();
         let ja3_hash = ja3.pop().unwrap();
         assert_eq!(ja3_hash.ja3_str, expected_str);
         assert_eq!(format!("{:x}", ja3_hash.hash), expected_hash);
@@ -427,7 +427,7 @@ mod tests {
         let expected_hash = "456523fc94726331a4d5a2e1d40b2cd7";
         let expected_daddr = IpAddr::V4("93.184.216.34".parse().unwrap());
 
-        let mut ja3s = Ja3::new("curl.pcap").process_pcap().unwrap();
+        let mut ja3s = Ja3::new("tests/curl.pcap").process_pcap().unwrap();
         let ja3 = ja3s.pop().unwrap();
         assert_eq!(ja3.ja3_str, expected_str);
         assert_eq!(format!("{:x}", ja3.hash), expected_hash);
@@ -440,7 +440,7 @@ mod tests {
         let expected_hash = "456523fc94726331a4d5a2e1d40b2cd7";
         let expected_daddr = IpAddr::V6("2606:2800:220:1:248:1893:25c8:1946".parse().unwrap());
 
-        let mut ja3s = Ja3::new("curl-ipv6.pcap").process_pcap().unwrap();
+        let mut ja3s = Ja3::new("tests/curl-ipv6.pcap").process_pcap().unwrap();
         let ja3 = ja3s.pop().unwrap();
         assert_eq!(ja3.ja3_str, expected_str);
         assert_eq!(format!("{:x}", ja3.hash), expected_hash);
@@ -452,7 +452,7 @@ mod tests {
         let expected_str = "771,4866-4867-4865-49196-49200-163-159-52393-52392-52394-49327-49325-49315-49311-49245-49249-49239-49235-49188-49192-107-106-49267-49271-196-195-49162-49172-57-56-136-135-157-49313-49309-49233-61-192-53-132-49195-49199-162-158-49326-49324-49314-49310-49244-49248-49238-49234-49187-49191-103-64-49266-49270-190-189-49161-49171-51-50-154-153-69-68-156-49312-49308-49232-60-186-47-150-65-255,0-11-10-35-22-23-13-43-45-51-21,29-23-30-25-24,0-1-2";
         let expected_hash = "10a6b69a81bac09072a536ce9d35dd43";
 
-        let mut ja3 = Ja3::new("ncat-port-4450.pcap")
+        let mut ja3 = Ja3::new("tests/ncat-port-4450.pcap")
             .any_port()
             .process_pcap()
             .unwrap();
