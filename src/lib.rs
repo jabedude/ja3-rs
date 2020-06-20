@@ -40,14 +40,17 @@
 //!
 //! ```
 
+use std::fs::File;
 use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::net::IpAddr;
 
 use lazy_static::*;
-use log::info;
+use log::{info, debug, error};
 use md5::{self, Digest};
 use pcap::{Active, Capture};
+use pcap_parser::{LegacyPcapReader, PcapBlockOwned, PcapError};
+use pcap_parser::traits::PcapReaderIterator;
 use pnet::packet::ethernet::EtherType;
 use pnet::packet::ip::IpNextHeaderProtocol;
 use pnet::packet::ip::IpNextHeaderProtocols;
@@ -143,15 +146,37 @@ impl Ja3 {
     /// Scans the provided packet capture for TLS handshakes and returns JA3 hashes for any found.
     pub fn process_pcap(&self) -> Result<Vec<Ja3Hash>, Error> {
         let mut results: Vec<Ja3Hash> = Vec::new();
-        let mut cap = Capture::from_file(&self.i.path).unwrap();
-        while let Ok(packet) = cap.next() {
-            let ja3_hash = match self.process_packet_common(&packet) {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
 
-            info!("Adding JA3: {:?}", ja3_hash);
-            results.push(ja3_hash);
+        let file = File::open(&self.i.path)?;
+        let mut reader = LegacyPcapReader::new(65536, file).expect("LegacyPcapReader");
+        loop {
+            match reader.next() {
+                Ok((offset, block)) => {
+                    match block {
+                        PcapBlockOwned::LegacyHeader(_hdr) => {
+                            // save hdr.network (linktype)
+                        },
+                        PcapBlockOwned::Legacy(block) => {
+                            let ja3_hash = match self.process_packet_common(&block.data) {
+                                Ok(s) => s,
+                                Err(_) => {
+                                    reader.consume(offset);
+                                    continue;
+                                },
+                            };
+                            debug!("Adding JA3: {:?}", ja3_hash);
+                            results.push(ja3_hash);
+                        },
+                        PcapBlockOwned::NG(_) => unreachable!(),
+                    }
+                    reader.consume(offset);
+                },
+                Err(PcapError::Eof) => break,
+                Err(PcapError::Incomplete) => {
+                    reader.refill().unwrap();
+                },
+                Err(e) => return Err(e.into()),
+            }
         }
 
         Ok(results)
