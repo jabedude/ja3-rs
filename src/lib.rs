@@ -28,7 +28,7 @@
 //!
 //! Example of fingerprinting a live capture:
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use ja3::Ja3;
 //!
 //! let mut ja3 = Ja3::new("eth0")
@@ -46,8 +46,9 @@ use std::fmt;
 use std::net::IpAddr;
 
 use lazy_static::*;
-use log::{info, debug, error};
+use log::{info, debug};
 use md5::{self, Digest};
+#[cfg(feature = "live-capture")]
 use pcap::{Active, Capture};
 use pcap_parser::{LegacyPcapReader, PcapBlockOwned, PcapError};
 use pcap_parser::traits::PcapReaderIterator;
@@ -99,11 +100,13 @@ pub struct Ja3Hash {
 }
 
 /// Iterator of JA3 hashes captured during a live capture.
+#[cfg(feature = "live-capture")]
 pub struct Ja3Live {
     cap: Capture<Active>,
     ja3_inner: Ja3,
 }
 
+#[cfg(feature = "live-capture")]
 impl Iterator for Ja3Live {
     type Item = Ja3Hash;
 
@@ -184,6 +187,7 @@ impl Ja3 {
 
     /// Opens a live packet capture and scans packets for TLS handshakes and returns an iterator of
     /// JA3 hashes found.
+    #[cfg(feature = "live-capture")]
     pub fn process_live(self) -> Result<Ja3Live, Error> {
         let cap = Capture::from_device(self.i.path.to_str().unwrap())?.open()?;
         info!("cap: {:?}", self.i.path);
@@ -386,6 +390,7 @@ mod tests {
 
     // NOTE: Any test for the live-capture feature requires elevated privileges.
 
+    #[cfg(feature = "live-capture")]
     rusty_fork_test! {
     #[test] #[ignore]
     fn test_ja3_client_hello_chrome_grease_single_packet_live() {
