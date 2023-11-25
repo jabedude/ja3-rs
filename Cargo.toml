@@ -2,7 +2,7 @@
 name = "ja3"
 version = "0.5.0"
 authors = ["Joshua Abraham <sinisterpatrician@gmail.com>"]
-edition = "2018"
+edition = "2021"
 description = "JA3 hash library in Rust"
 keywords = ["ja3", "ssl", "tls", "networking", "network-analysis"]
 homepage = "https://github.com/jabedude/ja3-rs/"
@@ -24,7 +24,7 @@ log = "0.4.8"
 md5 = "0.7.0"
 pcap = { version = "0.7.0", optional = true }
 pcap-parser = "0.9.2"
-pnet = "0.28.0"
+pnet = "0.34.0"
 tls-parser = "0.9.2"
 
 [dev-dependencies]
