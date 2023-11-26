@@ -92,7 +92,7 @@ pub struct Ja3Hash {
     /// See the original [JA3 specification](https://github.com/salesforce/ja3#how-it-works) for more info.
     pub ja3_str: String,
     /// The MD5 hash of `ja3_str`.
-    pub hash: Option<Digest>,
+    pub hash: Digest,
     /// The destination IP address of the TLS handshake.
     pub source: IpAddr,
     /// The source IP address of the TLS handshake.
@@ -117,9 +117,9 @@ impl Iterator for Ja3Live {
     fn next(&mut self) -> Option<Self::Item> {
         while let Ok(packet) = self.cap.next() {
             match self.ja3_inner.process_packet_common(&packet) {
-                Ok(ja3_hash) => {
-                    // You can now use ja3_hash.packet_size and ja3_hash.is_handshake
-                    return Some(ja3_hash);
+                Ok(ja3) => {
+                    // You can now use ja3.packet_size and ja3.is_handshake
+                    return Some(ja3);
                 }
                 Err(_) => continue,
             }
@@ -215,11 +215,9 @@ impl Ja3 {
     }
 
     fn process_packet_common(&self, packet: &[u8]) -> Result<Ja3Hash, Error> {
-        warn!("start process packet common...");
         let saddr;
         let daddr;
         let ether = ethernet::EthernetPacket::new(&packet).ok_or(Ja3Error::ParseError)?;
-
         let packet_size = ether.payload().len();
 
         info!("\nether packet: {:?} len: {}", ether, ether.packet_size());
@@ -263,21 +261,20 @@ impl Ja3 {
         let handshake_start = tcp_start + tcp.packet_size();
         info!("handshake_start: {}", handshake_start);
         let handshake = &packet[handshake_start..];
-        // if handshake.len() <= 0 {
-        //     return Err(Ja3Error::NotHandshake)?;
-        // }
-        // if handshake[0] != 0x16 {
-        //     return Err(Ja3Error::NotHandshake)?;
-        // }
+        if handshake.len() <= 0 {
+            return Err(Ja3Error::NotHandshake)?;
+        }
+        if handshake[0] != 0x16 {
+            return Err(Ja3Error::NotHandshake)?;
+        }
         info!("handshake: {:x?}", handshake);
 
-        // mark if its a handshake
+        // mark if its a handshake, might not be needed
         let is_handshake = if handshake.len() > 0 && handshake[0] == 0x16 {
             true // It's a TLS handshake
         } else {
             false
         };
-
 
         info!("sending handshake {:?}", handshake);
         match self.ja3_string_client_hello(&handshake) {
@@ -286,7 +283,7 @@ impl Ja3 {
                 let hash = md5::compute(&ja3_string.as_bytes());
                 let ja3_res = Ja3Hash {
                     ja3_str: ja3_string,
-                    hash: Option::Some(hash),
+                    hash: hash,
                     source: saddr,
                     destination: daddr,
                     packet_size: packet_size,
@@ -296,19 +293,20 @@ impl Ja3 {
                 Ok(ja3_res)
             },
             _ => {
-                warn!("setting ja3 to none");
-                // Handle the case where the JA3 string is None or empty
-                // You can either skip this packet, log it, or handle it differently
-                let ja3_res = Ja3Hash {
-                    ja3_str: "".to_owned(),
-                    hash: Option::None,
-                    source: saddr,
-                    destination: daddr,
-                    packet_size: packet_size,
-                    is_handshake: is_handshake,
-                };
-
-                Ok(ja3_res)
+                return Err(Ja3Error::NotHandshake)?;
+                // warn!("setting ja3 to none");
+                // // Handle the case where the JA3 string is None or empty
+                // // You can either skip this packet, log it, or handle it differently
+                // let ja3_res = Ja3Hash {
+                //     ja3_str: "".to_owned(),
+                //     hash: Option::None,
+                //     source: saddr,
+                //     destination: daddr,
+                //     packet_size: packet_size,
+                //     is_handshake: is_handshake,
+                // };
+                //
+                // Ok(ja3_res)
             }
         }
 
@@ -459,7 +457,7 @@ mod tests {
                                 .process_live().unwrap();
                 if let Some(x) = ja3.next() {
                     assert_eq!(x.ja3_str, expected_str);
-                    assert_eq!(format!("{:x}", x.hash.unwrap()), expected_hash);
+                    assert_eq!(format!("{:x}", x.hash), expected_hash);
                     assert_eq!(expected_daddr, x.destination);
                     std::process::exit(0);
                 }
@@ -489,7 +487,7 @@ mod tests {
             .unwrap();
         let ja3_hash = ja3.pop().unwrap();
         assert_eq!(ja3_hash.ja3_str, expected_str);
-        assert_eq!(format!("{:x}", ja3_hash.hash.unwrap()), expected_hash);
+        assert_eq!(format!("{:x}", ja3_hash.hash), expected_hash);
         assert_eq!(expected_daddr, ja3_hash.destination);
     }
 
@@ -502,7 +500,7 @@ mod tests {
         let mut ja3 = Ja3::new("tests/test.pcap").process_pcap().unwrap();
         let ja3_hash = ja3.pop().unwrap();
         assert_eq!(ja3_hash.ja3_str, expected_str);
-        assert_eq!(format!("{:x}", ja3_hash.hash.unwrap()), expected_hash);
+        assert_eq!(format!("{:x}", ja3_hash.hash), expected_hash);
         assert_eq!(expected_daddr, ja3_hash.destination);
     }
 
@@ -515,7 +513,7 @@ mod tests {
         let mut ja3s = Ja3::new("tests/curl.pcap").process_pcap().unwrap();
         let ja3 = ja3s.pop().unwrap();
         assert_eq!(ja3.ja3_str, expected_str);
-        assert_eq!(format!("{:x}", ja3.hash.unwrap()), expected_hash);
+        assert_eq!(format!("{:x}", ja3.hash), expected_hash);
         assert_eq!(expected_daddr, ja3.destination);
     }
 
@@ -528,7 +526,7 @@ mod tests {
         let mut ja3s = Ja3::new("tests/curl-ipv6.pcap").process_pcap().unwrap();
         let ja3 = ja3s.pop().unwrap();
         assert_eq!(ja3.ja3_str, expected_str);
-        assert_eq!(format!("{:x}", ja3.hash.unwrap()), expected_hash);
+        assert_eq!(format!("{:x}", ja3.hash), expected_hash);
         assert_eq!(expected_daddr, ja3.destination);
     }
 
@@ -543,7 +541,7 @@ mod tests {
             .unwrap();
         let ja3_hash = ja3.pop().unwrap();
         assert_eq!(ja3_hash.ja3_str, expected_str);
-        assert_eq!(format!("{:x}", ja3_hash.hash.unwrap()), expected_hash);
+        assert_eq!(format!("{:x}", ja3_hash.hash), expected_hash);
         assert_eq!(
             IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
             ja3_hash.destination
