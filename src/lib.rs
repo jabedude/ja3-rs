@@ -44,6 +44,7 @@ use std::fs::File;
 use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::net::IpAddr;
+use std::time::Duration;
 
 use lazy_static::*;
 use log::{info, debug, warn};
@@ -63,6 +64,7 @@ use tls_parser::tls_extensions::{parse_tls_extensions, TlsExtension, TlsExtensio
 mod errors;
 use errors::*;
 use failure::Error;
+use pnet::packet::tcp::TcpFlags;
 
 lazy_static! {
     static ref IPTYPE: IpNextHeaderProtocol = IpNextHeaderProtocol::new(6);
@@ -92,7 +94,7 @@ pub struct Ja3Hash {
     /// See the original [JA3 specification](https://github.com/salesforce/ja3#how-it-works) for more info.
     pub ja3_str: String,
     /// The MD5 hash of `ja3_str`.
-    pub hash: Digest,
+    pub hash: Option<Digest>,
     /// The destination IP address of the TLS handshake.
     pub source: IpAddr,
     /// The source IP address of the TLS handshake.
@@ -101,6 +103,10 @@ pub struct Ja3Hash {
     pub packet_size: usize,
     // is this a handshake
     pub is_handshake: bool,
+    pub ethernet_frame_size: usize,
+    pub is_syn: bool,
+    pub is_fin: bool,
+    pub is_rst: bool,
 }
 
 /// Iterator of JA3 hashes captured during a live capture.
@@ -219,6 +225,7 @@ impl Ja3 {
         let daddr;
         let ether = ethernet::EthernetPacket::new(&packet).ok_or(Ja3Error::ParseError)?;
         let packet_size = ether.payload().len();
+        let ethernet_frame_size = packet.len();
 
         info!("\nether packet: {:?} len: {}", ether, ether.packet_size());
         let tcp_start = match ether.get_ethertype() {
@@ -257,16 +264,20 @@ impl Ja3 {
             }
         }
 
+        let is_syn = tcp.get_flags() & TcpFlags::SYN != 0;
+        let is_fin = tcp.get_flags() & TcpFlags::FIN != 0;
+        let is_rst = tcp.get_flags() & TcpFlags::RST != 0;
+
         info!("pack size: {}", tcp.packet_size());
         let handshake_start = tcp_start + tcp.packet_size();
         info!("handshake_start: {}", handshake_start);
         let handshake = &packet[handshake_start..];
-        if handshake.len() <= 0 {
-            return Err(Ja3Error::NotHandshake)?;
-        }
-        if handshake[0] != 0x16 {
-            return Err(Ja3Error::NotHandshake)?;
-        }
+        // if handshake.len() <= 0 {
+        //     return Err(Ja3Error::NotHandshake)?;
+        // }
+        // if handshake[0] != 0x16 {
+        //     return Err(Ja3Error::NotHandshake)?;
+        // }
         info!("handshake: {:x?}", handshake);
 
         // mark if its a handshake, might not be needed
@@ -283,30 +294,38 @@ impl Ja3 {
                 let hash = md5::compute(&ja3_string.as_bytes());
                 let ja3_res = Ja3Hash {
                     ja3_str: ja3_string,
-                    hash: hash,
+                    hash: Some(hash),
                     source: saddr,
                     destination: daddr,
                     packet_size: packet_size,
                     is_handshake: is_handshake,
+                    ethernet_frame_size: ethernet_frame_size,
+                    is_syn: is_syn,
+                    is_fin: is_fin,
+                    is_rst: is_rst,
                 };
 
                 Ok(ja3_res)
-            },
+            }
             _ => {
-                return Err(Ja3Error::NotHandshake)?;
+                // return Err(Ja3Error::NotHandshake)?;
                 // warn!("setting ja3 to none");
-                // // Handle the case where the JA3 string is None or empty
-                // // You can either skip this packet, log it, or handle it differently
-                // let ja3_res = Ja3Hash {
-                //     ja3_str: "".to_owned(),
-                //     hash: Option::None,
-                //     source: saddr,
-                //     destination: daddr,
-                //     packet_size: packet_size,
-                //     is_handshake: is_handshake,
-                // };
-                //
-                // Ok(ja3_res)
+                // Handle the case where the JA3 string is None or empty
+                // You can either skip this packet, log it, or handle it differently
+                let ja3_res = Ja3Hash {
+                    ja3_str: "".to_owned(),
+                    hash: Option::None,
+                    source: saddr,
+                    destination: daddr,
+                    packet_size: packet_size,
+                    is_handshake: is_handshake,
+                    ethernet_frame_size: ethernet_frame_size,
+                    is_syn: is_syn,
+                    is_fin: is_fin,
+                    is_rst: is_rst,
+                };
+
+                Ok(ja3_res)
             }
         }
 
@@ -457,7 +476,7 @@ mod tests {
                                 .process_live().unwrap();
                 if let Some(x) = ja3.next() {
                     assert_eq!(x.ja3_str, expected_str);
-                    assert_eq!(format!("{:x}", x.hash), expected_hash);
+                    assert_eq!(format!("{:x}", x.hash.unwrap()), expected_hash);
                     assert_eq!(expected_daddr, x.destination);
                     std::process::exit(0);
                 }
@@ -487,7 +506,7 @@ mod tests {
             .unwrap();
         let ja3_hash = ja3.pop().unwrap();
         assert_eq!(ja3_hash.ja3_str, expected_str);
-        assert_eq!(format!("{:x}", ja3_hash.hash), expected_hash);
+        assert_eq!(format!("{:x}", ja3_hash.hash.unwrap()), expected_hash);
         assert_eq!(expected_daddr, ja3_hash.destination);
     }
 
@@ -500,7 +519,7 @@ mod tests {
         let mut ja3 = Ja3::new("tests/test.pcap").process_pcap().unwrap();
         let ja3_hash = ja3.pop().unwrap();
         assert_eq!(ja3_hash.ja3_str, expected_str);
-        assert_eq!(format!("{:x}", ja3_hash.hash), expected_hash);
+        assert_eq!(format!("{:x}", ja3_hash.hash.unwrap()), expected_hash);
         assert_eq!(expected_daddr, ja3_hash.destination);
     }
 
@@ -511,11 +530,26 @@ mod tests {
         let expected_daddr = IpAddr::V4("93.184.216.34".parse().unwrap());
 
         let mut ja3s = Ja3::new("tests/curl.pcap").process_pcap().unwrap();
-        let ja3 = ja3s.pop().unwrap();
+        let mut found_ja3_hash = None;
+
+        // Iterate through all JA3 hashes until we find one from a TLS handshake
+        for ja3_hash in ja3s {
+            if ja3_hash.is_handshake {
+                found_ja3_hash = Some(ja3_hash);
+                break; // Exit the loop once we find the first TLS handshake
+            }
+        }
+
+        // Ensure we found a JA3 hash from a TLS handshake
+        assert!(found_ja3_hash.is_some(), "No JA3 hash from a TLS handshake was found");
+        let ja3 = found_ja3_hash.unwrap();
+
+        // Perform your assertions
         assert_eq!(ja3.ja3_str, expected_str);
-        assert_eq!(format!("{:x}", ja3.hash), expected_hash);
-        assert_eq!(expected_daddr, ja3.destination);
+        assert_eq!(format!("{:x}", ja3.hash.unwrap()), expected_hash);
+        assert_eq!(ja3.destination, expected_daddr);
     }
+
 
     #[test]
     fn test_ja3_curl_full_stream_ipv6() {
@@ -524,27 +558,51 @@ mod tests {
         let expected_daddr = IpAddr::V6("2606:2800:220:1:248:1893:25c8:1946".parse().unwrap());
 
         let mut ja3s = Ja3::new("tests/curl-ipv6.pcap").process_pcap().unwrap();
-        let ja3 = ja3s.pop().unwrap();
+        let mut found_ja3_hash = None;
+
+        for ja3_hash in ja3s {
+            if ja3_hash.is_handshake {
+                found_ja3_hash = Some(ja3_hash);
+                break;
+            }
+        }
+
+        assert!(found_ja3_hash.is_some(), "No JA3 hash from a TLS handshake was found");
+        let ja3 = found_ja3_hash.unwrap();
+
         assert_eq!(ja3.ja3_str, expected_str);
-        assert_eq!(format!("{:x}", ja3.hash), expected_hash);
-        assert_eq!(expected_daddr, ja3.destination);
+        assert_eq!(format!("{:x}", ja3.hash.unwrap()), expected_hash);
+        assert_eq!(ja3.destination, expected_daddr);
     }
+
 
     #[test]
     fn test_ja3_client_hello_ncat_full_stream_non_tls_port() {
         let expected_str = "771,4866-4867-4865-49196-49200-163-159-52393-52392-52394-49327-49325-49315-49311-49245-49249-49239-49235-49188-49192-107-106-49267-49271-196-195-49162-49172-57-56-136-135-157-49313-49309-49233-61-192-53-132-49195-49199-162-158-49326-49324-49314-49310-49244-49248-49238-49234-49187-49191-103-64-49266-49270-190-189-49161-49171-51-50-154-153-69-68-156-49312-49308-49232-60-186-47-150-65-255,0-11-10-35-22-23-13-43-45-51-21,29-23-30-25-24,0-1-2";
         let expected_hash = "10a6b69a81bac09072a536ce9d35dd43";
 
-        let mut ja3 = Ja3::new("tests/ncat-port-4450.pcap")
+        let mut ja3s = Ja3::new("tests/ncat-port-4450.pcap")
             .any_port()
             .process_pcap()
             .unwrap();
-        let ja3_hash = ja3.pop().unwrap();
+        let mut found_ja3_hash = None;
+
+        for ja3_hash in ja3s {
+            if ja3_hash.is_handshake {
+                found_ja3_hash = Some(ja3_hash);
+                break;
+            }
+        }
+
+        assert!(found_ja3_hash.is_some(), "No JA3 hash from a TLS handshake was found");
+        let ja3_hash = found_ja3_hash.unwrap();
+
         assert_eq!(ja3_hash.ja3_str, expected_str);
-        assert_eq!(format!("{:x}", ja3_hash.hash), expected_hash);
+        assert_eq!(format!("{:x}", ja3_hash.hash.unwrap()), expected_hash);
         assert_eq!(
-            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-            ja3_hash.destination
+            ja3_hash.destination,
+            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))
         );
     }
+
 }
